@@ -1,51 +1,23 @@
 #!/bin/bash
 
-POKEMONS=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
-API_URL="https://pokeapi.co/api/v2/pokemon"
-ERROR_FILE="errors.txt"
+OUTPUT_FILE="summary.csv"
+TEMP_FILE="temp.txt"
 
-# Loop through Pokémon names
-for pokemon in "${POKEMONS[@]}"; do
-    OUTPUT_FILE="${pokemon}.json"
-    retries=3
+# Prepare CSV headers
+echo "Name,Height (m),Weight (kg)" > "$OUTPUT_FILE"
 
-    while ((retries > 0)); do
-        curl -s -o "$OUTPUT_FILE" -w "%{http_code}" "$API_URL/$pokemon" | {
-            read status
-            if [[ $status -eq 200 ]]; then
-                echo "Successfully fetched data for $pokemon."
-                break
-            else
-                echo "Failed to fetch $pokemon. Retrying... ($retries left)"
-                ((retries--))
-            fi
-        }
-
-        if ((retries == 0)); then
-            echo "Error: Failed to fetch $pokemon after multiple attempts." >> "$ERROR_FILE"
-        fi
-
-        sleep 2 # Handle rate limiting
-    done
+# Read all JSON files and extract data
+for file in *.json; do
+    name=$(jq -r '.name' "$file")
+    height=$(jq -r '.height' "$file")
+    weight=$(jq -r '.weight' "$file")
+    height_m=$(awk "BEGIN {printf \"%.1f\", $height / 10}")
+    weight_kg=$(awk "BEGIN {printf \"%.1f\", $weight / 10}")
+    echo "$name,$height_m,$weight_kg" >> "$OUTPUT_FILE"
 done
 
-fetch_pokemon() {
-    local pokemon="$1"
-    local OUTPUT_FILE="${pokemon}.json"
-    curl -s -o "$OUTPUT_FILE" -w "%{http_code}" "$API_URL/$pokemon" | {
-        read status
-        if [[ $status -eq 200 ]]; then
-            echo "Successfully fetched data for $pokemon."
-        else
-            echo "Error: Failed to fetch $pokemon with status $status." >> "$ERROR_FILE"
-        fi
-    }
-}
+# Calculate averages
+awk -F, 'NR > 1 {height+=$2; weight+=$3; count++} 
+         END {print "Average Height (m): " height/count "\nAverage Weight (kg): " weight/count}' "$OUTPUT_FILE" > "$TEMP_FILE"
 
-# Fetch data in parallel
-for pokemon in "${POKEMONS[@]}"; do
-    fetch_pokemon "$pokemon" &
-done
-
-# Wait for all background processes to finish
-wait
+cat "$TEMP_FILE"
